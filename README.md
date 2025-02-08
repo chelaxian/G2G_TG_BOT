@@ -2,6 +2,7 @@
 Group to Group Telegram chat-bot. \
 Links multiply chat-groups into single connected network, \
 and allow exchange messages between all connected groups 
+<img width="581" alt="image" src="https://github.com/user-attachments/assets/ce9ca2b7-ddea-46b3-a6e2-e77cb99a1bec" />
 
 ---
 ## Config files
