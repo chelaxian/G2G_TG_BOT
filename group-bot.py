@@ -107,6 +107,8 @@ async def all_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     header = f"❗️ Важное сообщение от администратора @{escape_markdownv2(admin.username)}\n\n"
     with open(USERS_FILE, "r") as f:
         user_chats = [line.strip() for line in f]
+
+    # Для каждой пользовательской группы отправляем сообщение и сразу уведомляем отправителя
     for user_chat in user_chats:
         try:
             await context.bot.send_message(
@@ -114,13 +116,14 @@ async def all_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=header + escaped_message,
                 parse_mode='MarkdownV2'
             )
+            await update.message.reply_text(f"✉️ Сообщение доставлено в группу {user_chat}.")
         except BadRequest as e:
             logger.error(f"BadRequest error while sending to {user_chat}: {e}")
             await update.message.reply_text(f"⚠️ Ошибка при отправке сообщения в группу {user_chat}.")
         except Exception as e:
             logger.error(f"Unexpected error while sending to {user_chat}: {e}")
             await update.message.reply_text(f"⚠️ Непредвиденная ошибка при отправке в группу {user_chat}.")
-    await update.message.reply_text("✉️ Сообщение отправлено во все пользовательские группы")
+
 
 async def get_groups_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_admin(update, context):
@@ -203,6 +206,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"ID: `{chat_id}`\n\n"
     )
 
+    success = False
     for admin_chat in admin_chats:
         try:
             await context.bot.send_message(
@@ -210,17 +214,23 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 text=header + escape_markdownv2(message.text),
                 parse_mode='MarkdownV2'
             )
+            success = True
         except BadRequest as e:
             logger.error(f"BadRequest error while sending to {admin_chat}: {e}")
         except Exception as e:
             logger.error(f"Unexpected error while sending to {admin_chat}: {e}")
+    
+    if success:
+        await update.message.reply_text("✉️ Сообщение успешно доставлено администратору(ам).")
+    else:
+        await update.message.reply_text("⚠️ Не удалось доставить сообщение администраторам.")
+
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = str(update.effective_chat.id)
 
-    # Если сообщение содержит упоминание бота или включён режим /on,
-    # выводим меню с кнопками для выбора пользовательской группы
+    # Если сообщение содержит упоминание бота или включён режим /on, выводим меню с кнопками
     if (message.text and f"@{context.bot.username}" in message.text) or states.get(chat_id, False):
         user_chats = load_groups(USERS_FILE)
         if not user_chats:
@@ -240,7 +250,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❓ Выберите группу для отправки сообщения:", reply_markup=reply_markup)
         return
 
-    # Обработка ответов на сообщения бота (например, когда админ отвечает на сообщение, отправленное ботом)
+    # Если админ отвечает на сообщение, отправленное ботом, доставляем ответ в нужную группу
     if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
         original_text = message.reply_to_message.text
         if "✉️ Сообщение из группы" in original_text:
@@ -257,29 +267,28 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     text=header + escape_markdownv2(message.text),
                     parse_mode='MarkdownV2'
                 )
+                await update.message.reply_text(f"✉️ Сообщение доставлено в группу {group_id}.")
             except Exception as e:
                 logger.error(f"⚠️ Ошибка отправки сообщения в чат: {e}")
+
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    # Получаем данные кнопки
+    # Получаем данные кнопки и ID админской группы (отправителя)
     action = query.data
     admin_chat_id = str(query.message.chat.id)
 
-    # Проверяем, что это админская группа
     if not await check_admin(update, context):
         await query.edit_message_text("⚠️ Эта функция доступна только в группах администраторов.")
         return
 
-    # Загружаем список пользовательских групп
     user_chats = load_groups(USERS_FILE)
     if not user_chats:
         await query.edit_message_text("⚠️ Список пользовательских групп пуст.")
         return
 
-    # Получаем исходное сообщение админа
     original_message = query.message.reply_to_message
     if not original_message:
         await query.edit_message_text("⚠️ Не удалось найти исходное сообщение.")
@@ -290,7 +299,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     header = f"✉️ Сообщение из админской группы *{escape_markdownv2(admin_chat.title)}*\nОт: @{escape_markdownv2(admin.username)}\n\n"
     message_text = header + escape_markdownv2(original_message.text)
 
-    # Обработка нажатия кнопки
+    # Отправка сообщения во все пользовательские группы
     if action == "send_to_all":
         for user_chat in user_chats:
             try:
@@ -299,13 +308,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=message_text,
                     parse_mode='MarkdownV2'
                 )
+                # Отправляем уведомление в админскую группу (отправителю)
+                await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {user_chat}.")
             except BadRequest as e:
                 logger.error(f"BadRequest error while sending to {user_chat}: {e}")
-                await query.edit_message_text(f"⚠️ Ошибка при отправке сообщения в группу {user_chat}.")
+                await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Ошибка при отправке сообщения в группу {user_chat}.")
             except Exception as e:
                 logger.error(f"Unexpected error while sending to {user_chat}: {e}")
-                await query.edit_message_text(f"⚠️ Непредвиденная ошибка при отправке в группу {user_chat}.")
+                await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Непредвиденная ошибка при отправке в группу {user_chat}.")
         await query.edit_message_text("✉️ Сообщение отправлено во все пользовательские группы.")
+
+    # Отправка сообщения в конкретную группу
     elif action.startswith("send_to_group_"):
         group_id = action.split("_")[-1]
         if group_id in user_chats:
@@ -316,14 +329,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode='MarkdownV2'
                 )
                 await query.edit_message_text(f"✉️ Сообщение отправлено в группу {group_id}.")
+                await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {group_id}.")
             except BadRequest as e:
                 logger.error(f"BadRequest error while sending to {group_id}: {e}")
                 await query.edit_message_text(f"⚠️ Ошибка при отправке сообщения в группу {group_id}.")
+                await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Ошибка при отправке сообщения в группу {group_id}.")
             except Exception as e:
                 logger.error(f"Unexpected error while sending to {group_id}: {e}")
                 await query.edit_message_text(f"⚠️ Непредвиденная ошибка при отправке в группу {group_id}.")
+                await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Непредвиденная ошибка при отправке в группу {group_id}.")
         else:
             await query.edit_message_text(f"⚠️ Группа {group_id} не найдена в списке пользовательских групп.")
+
 
 def escape_markdownv2(text: str) -> str:
     """
