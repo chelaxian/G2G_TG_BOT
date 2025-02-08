@@ -145,7 +145,7 @@ and allow exchange messages between all connected groups
 
 ---
 
-### Шаг 4. Получение токена для бота через BotFather
+### Шаг 4. Получение токена для бота через @BotFather (https://t.me/BotFather)
 
 1. **Запуск Telegram и поиск BotFather:**
    - Откройте Telegram и в строке поиска введите **BotFather**.
