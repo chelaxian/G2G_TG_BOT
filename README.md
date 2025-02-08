@@ -4,12 +4,12 @@ group to group Telegram bot. link multiply chat-groups into single connected net
 ---
 
 ## Commands
-`/start` - вызов бота
-`/on` - бот слушает сообщения
-`/off` - бот игнорирует сообщения
-`/all` - отправить всем
-`/get_groups_id` - получить ID групп
-`/add_user_group` - + ID - добавить ID в список users
-`/del_user_group` - + ID - удалить ID из списка users
-`/add_admin_group` - + ID - добавить ID в список admins
-`/del_admin_group` - + ID - удалить ID из списка admins
+`/start` - вызов бота \
+`/on` - бот слушает сообщения \
+`/off` - бот игнорирует сообщения \
+`/all` + "твое_сообщение" - отправить всем \
+`/get_groups_id` - получить ID групп \
+`/add_user_group` + "ID_группы" - добавить ID в список users.txt \
+`/del_user_group` + "ID_группы" - удалить ID из списка users.txt \
+`/add_admin_group` + "ID_группы" - добавить ID в список admins.txt \
+`/del_admin_group` + "ID_группы" - удалить ID из списка admins.txt \
