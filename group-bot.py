@@ -219,8 +219,9 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     message = update.message
     chat_id = str(update.effective_chat.id)
 
-    # Проверяем, активирован ли режим /on
-    if states.get(chat_id, False):
+    # Если сообщение содержит упоминание бота или включён режим /on,
+    # выводим меню с кнопками для выбора пользовательской группы
+    if (message.text and f"@{context.bot.username}" in message.text) or states.get(chat_id, False):
         user_chats = load_groups(USERS_FILE)
         if not user_chats:
             await update.message.reply_text("Список пользовательских групп пуст.")
@@ -239,7 +240,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("Выберите группу для отправки сообщения:", reply_markup=reply_markup)
         return
 
-    # Обработка ответов на сообщения бота
+    # Обработка ответов на сообщения бота (например, когда админ отвечает на сообщение, отправленное ботом)
     if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
         original_text = message.reply_to_message.text
         if "Сообщение из группы" in original_text:
