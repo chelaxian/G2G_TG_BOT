@@ -105,7 +105,11 @@ async def all_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     admin = update.message.from_user
     # Заголовок, который будет отправлен отдельным сообщением
-    header = f"❗️ Важное сообщение от администратора @{escape_markdownv2(admin.username)}"
+    header = (
+        f"❗️ Важное сообщение от администратора @{escape_markdownv2(admin.username)}\n"
+        f"Группа: *{escape_markdownv2(update.effective_chat.title)}*\n"
+        f"ID группы: `{update.message.chat.id}`"
+    )
     user_chats = load_groups(USERS_FILE)
 
     for user_chat in user_chats:
@@ -189,7 +193,7 @@ def split_message(message_text: str, max_length: int = 4096):
         part = message_text[:max_length]
         messages.append(part)
         message_text = message_text[max_length:]
-    
+
     # Добавляем оставшуюся часть, если она есть
     if message_text:
         messages.append(message_text)
@@ -225,8 +229,8 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Запускаем обработку, если:
     # - есть реплай, или
     # - текст содержит упоминание бота, или включён режим /on.
-    if not ((message.text and f"@{context.bot.username}" in message.text) or 
-            states.get(chat_id, False) or 
+    if not ((message.text and f"@{context.bot.username}" in message.text) or
+            states.get(chat_id, False) or
             message.reply_to_message):
         return
 
@@ -236,7 +240,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     header_text = (
         f"✉️ Сообщение из группы *{escape_markdownv2(chat.title)}*\n"
         f"От: @{escape_markdownv2(user.username)}\n"
-        f"ID: `{chat_id}`"
+        f"ID группы: `{chat_id}`"
     )
 
     success = False
@@ -290,41 +294,24 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     message = update.message
     chat_id = str(update.effective_chat.id)
 
-    # Если реплая нет, а сообщение содержит упоминание бота или включён режим /on,
-    # выводим меню с кнопками для выбора пользовательской группы.
-    if (not message.reply_to_message) and ((message.text and f"@{context.bot.username}" in message.text) or states.get(chat_id, False)):
-        user_chats = load_groups(USERS_FILE)
-        if not user_chats:
-            await update.message.reply_text("⚠️ Список пользовательских групп пуст.")
-            return
-        keyboard = []
-        keyboard.append([InlineKeyboardButton("*️⃣ Отправить всем", callback_data="send_to_all")])
-        for user_chat in user_chats:
-            try:
-                chat = await context.bot.get_chat(user_chat)
-                button_text = chat.title[:20]
-                keyboard.append([InlineKeyboardButton(button_text, callback_data=f"send_to_group_{user_chat}")])
-            except Exception as e:
-                logger.error(f"⚠️ Ошибка при получении информации о чате {user_chat}: {e}")
-                continue
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("❓ Выберите группу для отправки сообщения:", reply_markup=reply_markup)
-        return
-
-    # Если сообщение является реплаем
+    # Проверяем, является ли сообщение реплаем
     if message.reply_to_message:
+        # Проверяем, является ли реплай сообщением от бота и содержит ли оно заголовок
         if message.reply_to_message.from_user.id == context.bot.id:
-            # Реплай на сообщение бота – старая логика: извлекаем ID целевой группы из заголовка
             original_text = message.reply_to_message.text
             if "✉️ Сообщение из группы" in original_text:
                 try:
+                    # Извлекаем ID целевой группы из заголовка
                     parts = original_text.split('\n')
                     group_id = parts[2].split(': ')[-1].strip('`')
+
                     admin = message.from_user
                     header_text = (
                         f"✉️ Ответ из группы *{escape_markdownv2(update.effective_chat.title)}*\n"
-                        f"От: @{escape_markdownv2(admin.username)}"
+                        f"От: @{escape_markdownv2(admin.username)}\n"
+                        f"ID группы: `{update.effective_chat.id}`"
                     )
+                    # Отправляем ответ в целевую группу
                     await context.bot.send_message(
                         chat_id=group_id,
                         text=header_text,
@@ -338,9 +325,14 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     await update.message.reply_text(f"✉️ Сообщение доставлено в группу {group_id}.")
                 except Exception as e:
                     logger.error(f"⚠️ Ошибка отправки сообщения в чат: {e}")
+                    await update.message.reply_text("⚠️ Произошла ошибка при отправке сообщения.")
+            else:
+                # Если реплай не содержит заголовка
+                await update.message.reply_text(
+                    "⚠️ Пожалуйста, ответьте на сообщение с заголовком: ✉️ Сообщение из группы."
+                )
         else:
             # Реплай на НЕ-ботовое сообщение – новая логика (двойная пересылка)
-            # Пересылаем оба сообщения во все пользовательские группы
             user_chats = load_groups(USERS_FILE)
             admin = message.from_user
             header_text = (
@@ -355,13 +347,13 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                         text=header_text,
                         parse_mode='MarkdownV2'
                     )
-                    # Сначала пересылаем оригинальное сообщение (на которое дали реплай)
+                    # Пересылаем оригинальное сообщение (на которое дали реплай)
                     await context.bot.copy_message(
                         chat_id=user_chat,
                         from_chat_id=message.reply_to_message.chat.id,
                         message_id=message.reply_to_message.message_id
                     )
-                    # Затем пересылаем само новое сообщение
+                    # Пересылаем само новое сообщение
                     await context.bot.copy_message(
                         chat_id=user_chat,
                         from_chat_id=chat_id,
@@ -374,7 +366,27 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 await update.message.reply_text("✉️ Сообщение успешно доставлено в выбранные пользовательские группы.")
             else:
                 await update.message.reply_text("⚠️ Не удалось доставить сообщение.")
+    else:
+        # Если это не реплай, но есть упоминание бота или включен режим /on
+        if (message.text and f"@{context.bot.username}" in message.text) or states.get(chat_id, False):
+            user_chats = load_groups(USERS_FILE)
+            if not user_chats:
+                await update.message.reply_text("⚠️ Список пользовательских групп пуст.")
+                return
 
+            keyboard = []
+            keyboard.append([InlineKeyboardButton("*️⃣ Отправить всем", callback_data="send_to_all")])
+            for user_chat in user_chats:
+                try:
+                    chat = await context.bot.get_chat(user_chat)
+                    button_text = chat.title[:20]
+                    keyboard.append([InlineKeyboardButton(button_text, callback_data=f"send_to_group_{user_chat}")])
+                except Exception as e:
+                    logger.error(f"⚠️ Ошибка при получении информации о чате {user_chat}: {e}")
+                    continue
+
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("❓ Выберите группу для отправки сообщения:", reply_markup=reply_markup)
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -492,13 +504,13 @@ def main():
     application.add_handler(CommandHandler("all", all_command))
     application.add_handler(CommandHandler("get_groups_id", get_groups_id))
     # Обработчики управления группами
-    application.add_handler(CommandHandler("add_user_group", 
+    application.add_handler(CommandHandler("add_user_group",
         lambda u,c: handle_group_management(u,c, USERS_FILE, True)))
-    application.add_handler(CommandHandler("del_user_group", 
+    application.add_handler(CommandHandler("del_user_group",
         lambda u,c: handle_group_management(u,c, USERS_FILE, False)))
-    application.add_handler(CommandHandler("add_admin_group", 
+    application.add_handler(CommandHandler("add_admin_group",
         lambda u,c: handle_group_management(u,c, ADMINS_FILE, True)))
-    application.add_handler(CommandHandler("del_admin_group", 
+    application.add_handler(CommandHandler("del_admin_group",
         lambda u,c: handle_group_management(u,c, ADMINS_FILE, False)))
     # Обработчик сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
