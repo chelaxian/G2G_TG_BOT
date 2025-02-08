@@ -1,5 +1,7 @@
-# G2G_TG_BOT
-group to group Telegram bot. link multiply chat-groups into single connected network and allow exchange messages between all connected groups
+# G2G TG BOT
+Group to Group Telegram chat-bot. \
+Links multiply chat-groups into single connected network \ 
+and allow exchange messages between all connected groups \
 
 ---
 
