@@ -105,17 +105,20 @@ async def all_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     escaped_message = escape_markdownv2(message)
     admin = update.message.from_user
     header = f"❗️ Важное сообщение от администратора @{escape_markdownv2(admin.username)}\n\n"
-    with open(USERS_FILE, "r") as f:
-        user_chats = [line.strip() for line in f]
+    full_message = header + escaped_message
+
+    # Разделение сообщения на части, если оно слишком длинное
+    messages_to_send = split_message(full_message)
 
     # Для каждой пользовательской группы отправляем сообщение и сразу уведомляем отправителя
-    for user_chat in user_chats:
+    for user_chat in load_groups(USERS_FILE):
         try:
-            await context.bot.send_message(
-                chat_id=user_chat,
-                text=header + escaped_message,
-                parse_mode='MarkdownV2'
-            )
+            for msg in messages_to_send:
+                await context.bot.send_message(
+                    chat_id=user_chat,
+                    text=msg,
+                    parse_mode='MarkdownV2'
+                )
             await update.message.reply_text(f"✉️ Сообщение доставлено в группу {user_chat}.")
         except BadRequest as e:
             logger.error(f"BadRequest error while sending to {user_chat}: {e}")
@@ -143,7 +146,13 @@ async def get_groups_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception as e:
                         logger.error(f"⚠️ Ошибка получения информации о чате {chat_id}: {e}")
     response = "Список групп:\n\n" + "\n\n".join(groups)
-    await update.message.reply_text(response, parse_mode='MarkdownV2')
+    # Разделение сообщения на части, если оно слишком длинное
+    messages_to_send = split_message(response)
+
+    # Отправка сообщений по частям
+    for msg in messages_to_send:
+        await update.message.reply_text(msg, parse_mode='MarkdownV2')
+
 
 async def handle_group_management(update: Update, context: ContextTypes.DEFAULT_TYPE, file: str, add: bool):
     if not await check_admin(update, context):
@@ -159,6 +168,29 @@ async def handle_group_management(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text(f"Группа {chat_id} {action}")
     else:
         await update.message.reply_text("⚠️ Ошибка при обновлении списка групп")
+
+def split_message(message_text: str, max_length: int = 4096):
+    """
+    Разбивает сообщение на части, если его длина превышает максимальный лимит (4096 символов).
+    Возвращает список сообщений.
+    """
+    # Если сообщение меньше лимита, возвращаем его как есть
+    if len(message_text) <= max_length:
+        return [message_text]
+
+    # Разбиваем сообщение на части по max_length символов
+    messages = []
+    while len(message_text) > max_length:
+        # Находим максимальную длину сообщения, не превышающую лимит
+        part = message_text[:max_length]
+        messages.append(part)
+        message_text = message_text[max_length:]
+    
+    # Добавляем оставшуюся часть, если она есть
+    if message_text:
+        messages.append(message_text)
+
+    return messages
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.chat.type == 'private':
@@ -180,6 +212,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_user_message(update, context)
     elif is_admin_chat:
         await handle_admin_message(update, context)
+
 
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -205,15 +238,20 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"От: @{escape_markdownv2(user.username)}\n"
         f"ID: `{chat_id}`\n\n"
     )
+    full_message = header + escape_markdownv2(message.text)
+
+    # Разделение сообщения на части, если оно слишком длинное
+    messages_to_send = split_message(full_message)
 
     success = False
     for admin_chat in admin_chats:
         try:
-            await context.bot.send_message(
-                chat_id=admin_chat,
-                text=header + escape_markdownv2(message.text),
-                parse_mode='MarkdownV2'
-            )
+            for msg in messages_to_send:
+                await context.bot.send_message(
+                    chat_id=admin_chat,
+                    text=msg,
+                    parse_mode='MarkdownV2'
+                )
             success = True
         except BadRequest as e:
             logger.error(f"BadRequest error while sending to {admin_chat}: {e}")
@@ -224,7 +262,6 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("✉️ Сообщение успешно доставлено администратору(ам).")
     else:
         await update.message.reply_text("⚠️ Не удалось доставить сообщение администраторам.")
-
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -262,14 +299,21 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     f"✉️ Ответ из группы *{escape_markdownv2(update.effective_chat.title)}*\n"
                     f"От: @{escape_markdownv2(admin.username)}\n\n"
                 )
-                await context.bot.send_message(
-                    chat_id=group_id,
-                    text=header + escape_markdownv2(message.text),
-                    parse_mode='MarkdownV2'
-                )
+                full_message = header + escape_markdownv2(message.text)
+
+                # Разделение сообщения на части, если оно слишком длинное
+                messages_to_send = split_message(full_message)
+
+                for msg in messages_to_send:
+                    await context.bot.send_message(
+                        chat_id=group_id,
+                        text=msg,
+                        parse_mode='MarkdownV2'
+                    )
                 await update.message.reply_text(f"✉️ Сообщение доставлено в группу {group_id}.")
             except Exception as e:
                 logger.error(f"⚠️ Ошибка отправки сообщения в чат: {e}")
+
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -299,16 +343,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     header = f"✉️ Сообщение из админской группы *{escape_markdownv2(admin_chat.title)}*\nОт: @{escape_markdownv2(admin.username)}\n\n"
     message_text = header + escape_markdownv2(original_message.text)
 
+    # Разделение сообщения на части, если оно слишком длинное
+    messages_to_send = split_message(message_text)
+
     # Отправка сообщения во все пользовательские группы
     if action == "send_to_all":
         for user_chat in user_chats:
             try:
-                await context.bot.send_message(
-                    chat_id=user_chat,
-                    text=message_text,
-                    parse_mode='MarkdownV2'
-                )
-                # Отправляем уведомление в админскую группу (отправителю)
+                for msg in messages_to_send:
+                    await context.bot.send_message(
+                        chat_id=user_chat,
+                        text=msg,
+                        parse_mode='MarkdownV2'
+                    )
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {user_chat}.")
             except BadRequest as e:
                 logger.error(f"BadRequest error while sending to {user_chat}: {e}")
@@ -323,11 +370,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         group_id = action.split("_")[-1]
         if group_id in user_chats:
             try:
-                await context.bot.send_message(
-                    chat_id=group_id,
-                    text=message_text,
-                    parse_mode='MarkdownV2'
-                )
+                for msg in messages_to_send:
+                    await context.bot.send_message(
+                        chat_id=group_id,
+                        text=msg,
+                        parse_mode='MarkdownV2'
+                    )
                 await query.edit_message_text(f"✉️ Сообщение отправлено в группу {group_id}.")
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {group_id}.")
             except BadRequest as e:
