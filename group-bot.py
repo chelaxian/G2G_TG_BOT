@@ -98,27 +98,30 @@ async def all_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_admin(update, context):
         await update.message.reply_text("⚠️ Эта команда доступна только в группах администраторов.")
         return
-    message = ' '.join(context.args)
-    if not message:
+
+    if not context.args:
         await update.message.reply_text("💡 Использование: /all [текст сообщения]")
         return
-    escaped_message = escape_markdownv2(message)
+
     admin = update.message.from_user
-    header = f"❗️ Важное сообщение от администратора @{escape_markdownv2(admin.username)}\n\n"
-    full_message = header + escaped_message
+    # Заголовок, который будет отправлен отдельным сообщением
+    header = f"❗️ Важное сообщение от администратора @{escape_markdownv2(admin.username)}"
+    user_chats = load_groups(USERS_FILE)
 
-    # Разделение сообщения на части, если оно слишком длинное
-    messages_to_send = split_message(full_message)
-
-    # Для каждой пользовательской группы отправляем сообщение и сразу уведомляем отправителя
-    for user_chat in load_groups(USERS_FILE):
+    for user_chat in user_chats:
         try:
-            for msg in messages_to_send:
-                await context.bot.send_message(
-                    chat_id=user_chat,
-                    text=msg,
-                    parse_mode='MarkdownV2'
-                )
+            # Сначала отправляем заголовок
+            await context.bot.send_message(
+                chat_id=user_chat,
+                text=header,
+                parse_mode='MarkdownV2'
+            )
+            # Затем пересылаем (копируем) командное сообщение админа
+            await context.bot.copy_message(
+                chat_id=user_chat,
+                from_chat_id=update.message.chat.id,
+                message_id=update.message.message_id
+            )
             await update.message.reply_text(f"✉️ Сообщение доставлено в группу {user_chat}.")
         except BadRequest as e:
             logger.error(f"BadRequest error while sending to {user_chat}: {e}")
@@ -126,6 +129,7 @@ async def all_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Unexpected error while sending to {user_chat}: {e}")
             await update.message.reply_text(f"⚠️ Непредвиденная ошибка при отправке в группу {user_chat}.")
+
 
 
 async def get_groups_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -218,14 +222,12 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     message = update.message
     chat_id = str(update.effective_chat.id)
 
-    # Проверка триггеров
-    triggered = (
-        message.reply_to_message and 
-        message.reply_to_message.from_user.id == context.bot.id
-    ) or (
-        message.text and (f"@{context.bot.username}" in message.text)
-    ) or states.get(chat_id, False)
-    if not triggered:
+    # Запускаем обработку, если:
+    # - есть реплай, или
+    # - текст содержит упоминание бота, или включён режим /on.
+    if not ((message.text and f"@{context.bot.username}" in message.text) or 
+            states.get(chat_id, False) or 
+            message.reply_to_message):
         return
 
     admin_chats = load_groups(ADMINS_FILE)
@@ -240,36 +242,57 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     success = False
     for admin_chat in admin_chats:
         try:
-            # Отправляем заголовок (с информацией)
+            # Отправляем заголовок с информацией
             await context.bot.send_message(
                 chat_id=admin_chat,
                 text=header_text,
                 parse_mode='MarkdownV2'
             )
-            # Пересылаем (копируем) оригинальное сообщение с сохранением форматирования
-            await context.bot.copy_message(
-                chat_id=admin_chat,
-                from_chat_id=chat_id,
-                message_id=message.message_id
-            )
+            if message.reply_to_message:
+                if message.reply_to_message.from_user.id == context.bot.id:
+                    # Реплай на сообщение бота – старое поведение: пересылаем текущее сообщение
+                    await context.bot.copy_message(
+                        chat_id=admin_chat,
+                        from_chat_id=chat_id,
+                        message_id=message.message_id
+                    )
+                else:
+                    # Реплай на НЕ-ботовое сообщение – пересылаем два сообщения:
+                    # сначала оригинальное (на которое дали реплай), затем само новое сообщение
+                    await context.bot.copy_message(
+                        chat_id=admin_chat,
+                        from_chat_id=message.reply_to_message.chat.id,
+                        message_id=message.reply_to_message.message_id
+                    )
+                    await context.bot.copy_message(
+                        chat_id=admin_chat,
+                        from_chat_id=chat_id,
+                        message_id=message.message_id
+                    )
+            else:
+                # Если реплая нет – пересылаем текущее сообщение
+                await context.bot.copy_message(
+                    chat_id=admin_chat,
+                    from_chat_id=chat_id,
+                    message_id=message.message_id
+                )
             success = True
-        except BadRequest as e:
-            logger.error(f"BadRequest error while copying message to {admin_chat}: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error while copying message to {admin_chat}: {e}")
-    
+            logger.error(f"Ошибка при пересылке сообщения в админскую группу {admin_chat}: {e}")
     if success:
         await update.message.reply_text("✉️ Сообщение успешно доставлено администратору(ам).")
     else:
         await update.message.reply_text("⚠️ Не удалось доставить сообщение администраторам.")
 
 
+
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = str(update.effective_chat.id)
 
-    # Если сообщение содержит упоминание бота или включён режим /on, выводим меню с кнопками
-    if (message.text and f"@{context.bot.username}" in message.text) or states.get(chat_id, False):
+    # Если реплая нет, а сообщение содержит упоминание бота или включён режим /on,
+    # выводим меню с кнопками для выбора пользовательской группы.
+    if (not message.reply_to_message) and ((message.text and f"@{context.bot.username}" in message.text) or states.get(chat_id, False)):
         user_chats = load_groups(USERS_FILE)
         if not user_chats:
             await update.message.reply_text("⚠️ Список пользовательских групп пуст.")
@@ -288,35 +311,70 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❓ Выберите группу для отправки сообщения:", reply_markup=reply_markup)
         return
 
-    # Если админ отвечает на сообщение, пересылаем оригинал с сохранением форматирования
-    if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
-        original_text = message.reply_to_message.text
-        if "✉️ Сообщение из группы" in original_text:
-            try:
-                # Извлекаем ID группы из заголовка (предполагается, что он записан во 2-й строке)
-                parts = original_text.split('\n')
-                group_id = parts[2].split(': ')[-1].strip('`')
-                admin = message.from_user
-                header_text = (
-                    f"✉️ Ответ из группы *{escape_markdownv2(update.effective_chat.title)}*\n"
-                    f"От: @{escape_markdownv2(admin.username)}"
-                )
-                # Отправляем заголовок в целевую группу
-                await context.bot.send_message(
-                    chat_id=group_id,
-                    text=header_text,
-                    parse_mode='MarkdownV2'
-                )
-                # Пересылаем (копируем) оригинальное сообщение с сохранением форматирования
-                # В данном случае пересылается ответное сообщение админа
-                await context.bot.copy_message(
-                    chat_id=group_id,
-                    from_chat_id=chat_id,
-                    message_id=message.message_id
-                )
-                await update.message.reply_text(f"✉️ Сообщение доставлено в группу {group_id}.")
-            except Exception as e:
-                logger.error(f"⚠️ Ошибка отправки сообщения в чат: {e}")
+    # Если сообщение является реплаем
+    if message.reply_to_message:
+        if message.reply_to_message.from_user.id == context.bot.id:
+            # Реплай на сообщение бота – старая логика: извлекаем ID целевой группы из заголовка
+            original_text = message.reply_to_message.text
+            if "✉️ Сообщение из группы" in original_text:
+                try:
+                    parts = original_text.split('\n')
+                    group_id = parts[2].split(': ')[-1].strip('`')
+                    admin = message.from_user
+                    header_text = (
+                        f"✉️ Ответ из группы *{escape_markdownv2(update.effective_chat.title)}*\n"
+                        f"От: @{escape_markdownv2(admin.username)}"
+                    )
+                    await context.bot.send_message(
+                        chat_id=group_id,
+                        text=header_text,
+                        parse_mode='MarkdownV2'
+                    )
+                    await context.bot.copy_message(
+                        chat_id=group_id,
+                        from_chat_id=chat_id,
+                        message_id=message.message_id
+                    )
+                    await update.message.reply_text(f"✉️ Сообщение доставлено в группу {group_id}.")
+                except Exception as e:
+                    logger.error(f"⚠️ Ошибка отправки сообщения в чат: {e}")
+        else:
+            # Реплай на НЕ-ботовое сообщение – новая логика (двойная пересылка)
+            # Пересылаем оба сообщения во все пользовательские группы
+            user_chats = load_groups(USERS_FILE)
+            admin = message.from_user
+            header_text = (
+                f"✉️ Ответ из группы *{escape_markdownv2(update.effective_chat.title)}*\n"
+                f"От: @{escape_markdownv2(admin.username)}"
+            )
+            success = False
+            for user_chat in user_chats:
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_chat,
+                        text=header_text,
+                        parse_mode='MarkdownV2'
+                    )
+                    # Сначала пересылаем оригинальное сообщение (на которое дали реплай)
+                    await context.bot.copy_message(
+                        chat_id=user_chat,
+                        from_chat_id=message.reply_to_message.chat.id,
+                        message_id=message.reply_to_message.message_id
+                    )
+                    # Затем пересылаем само новое сообщение
+                    await context.bot.copy_message(
+                        chat_id=user_chat,
+                        from_chat_id=chat_id,
+                        message_id=message.message_id
+                    )
+                    success = True
+                except Exception as e:
+                    logger.error(f"Ошибка двойной пересылки в группу {user_chat}: {e}")
+            if success:
+                await update.message.reply_text("✉️ Сообщение успешно доставлено в выбранные пользовательские группы.")
+            else:
+                await update.message.reply_text("⚠️ Не удалось доставить сообщение.")
+
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -343,28 +401,43 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin = original_message.from_user
     admin_chat = await context.bot.get_chat(admin_chat_id)
     header_text = f"✉️ Сообщение из админской группы *{escape_markdownv2(admin_chat.title)}*\nОт: @{escape_markdownv2(admin.username)}"
-    
+
+    # Определяем, нужно ли выполнять двойную пересылку:
+    # если исходное сообщение, на которое дан реплай, само является реплаемом и не от бота.
+    dual_forward = False
+    if original_message.reply_to_message and original_message.reply_to_message.from_user.id != context.bot.id:
+        dual_forward = True
+
     if action == "send_to_all":
         for user_chat in user_chats:
             try:
-                # Отправляем заголовок в целевую группу
                 await context.bot.send_message(
                     chat_id=user_chat,
                     text=header_text,
                     parse_mode='MarkdownV2'
                 )
-                # Пересылаем оригинальное сообщение с сохранением форматирования
-                await context.bot.copy_message(
-                    chat_id=user_chat,
-                    from_chat_id=original_message.chat.id,
-                    message_id=original_message.message_id
-                )
+                if dual_forward:
+                    await context.bot.copy_message(
+                        chat_id=user_chat,
+                        from_chat_id=original_message.reply_to_message.chat.id,
+                        message_id=original_message.reply_to_message.message_id
+                    )
+                    await context.bot.copy_message(
+                        chat_id=user_chat,
+                        from_chat_id=original_message.chat.id,
+                        message_id=original_message.message_id
+                    )
+                else:
+                    await context.bot.copy_message(
+                        chat_id=user_chat,
+                        from_chat_id=original_message.chat.id,
+                        message_id=original_message.message_id
+                    )
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {user_chat}.")
             except Exception as e:
                 logger.error(f"Ошибка при пересылке сообщения в группу {user_chat}: {e}")
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Ошибка при отправке сообщения в группу {user_chat}.")
         await query.edit_message_text("✉️ Сообщение отправлено во все пользовательские группы.")
-
     elif action.startswith("send_to_group_"):
         group_id = action.split("_")[-1]
         if group_id in user_chats:
@@ -374,11 +447,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=header_text,
                     parse_mode='MarkdownV2'
                 )
-                await context.bot.copy_message(
-                    chat_id=group_id,
-                    from_chat_id=original_message.chat.id,
-                    message_id=original_message.message_id
-                )
+                if dual_forward:
+                    await context.bot.copy_message(
+                        chat_id=group_id,
+                        from_chat_id=original_message.reply_to_message.chat.id,
+                        message_id=original_message.reply_to_message.message_id
+                    )
+                    await context.bot.copy_message(
+                        chat_id=group_id,
+                        from_chat_id=original_message.chat.id,
+                        message_id=original_message.message_id
+                    )
+                else:
+                    await context.bot.copy_message(
+                        chat_id=group_id,
+                        from_chat_id=original_message.chat.id,
+                        message_id=original_message.message_id
+                    )
                 await query.edit_message_text(f"✉️ Сообщение отправлено в группу {group_id}.")
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {group_id}.")
             except Exception as e:
@@ -387,6 +472,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Ошибка при отправке сообщения в группу {group_id}.")
         else:
             await query.edit_message_text(f"⚠️ Группа {group_id} не найдена в списке пользовательских групп.")
+
 
 
 def escape_markdownv2(text: str) -> str:
