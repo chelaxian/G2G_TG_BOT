@@ -23,8 +23,9 @@ and allow exchange messages between all connected groups
 - `/add_admin_group` + "ID_группы" - добавить ID в список admins.txt 
 - `/del_admin_group` + "ID_группы" - удалить ID из списка admins.txt 
 
-Для получения ID группы рекомендую использовать другого бота `@getmy_idbot` (https://t.me/getmy_idbot) и кнопку `Chat`
-<img width="329" alt="image" src="https://github.com/user-attachments/assets/f08477e9-b0dd-4a00-bc2c-43e24f1001ee" />
+Для получения ID группы рекомендую использовать другого бота `@getmy_idbot` (https://t.me/getmy_idbot) и кнопку `Chat` (или аналогичные) \
+<img width="329" alt="image" src="https://github.com/user-attachments/assets/f08477e9-b0dd-4a00-bc2c-43e24f1001ee" /> \
+Также можно использовать кастомные Telegram-клиенты, которые показывают ID группы, например [iMe](https://www.imem.app/) или [Swiftgram](https://apps.apple.com/us/app/swiftgram/id6471879502)
 
 ---
 
