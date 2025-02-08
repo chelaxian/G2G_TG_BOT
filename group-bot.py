@@ -223,45 +223,46 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         message.reply_to_message and 
         message.reply_to_message.from_user.id == context.bot.id
     ) or (
-        message.text and 
-        (f"@{context.bot.username}" in message.text)
+        message.text and (f"@{context.bot.username}" in message.text)
     ) or states.get(chat_id, False)
     if not triggered:
         return
 
-    # Отправка сообщения админам
     admin_chats = load_groups(ADMINS_FILE)
     user = message.from_user
     chat = await context.bot.get_chat(chat_id)
-    header = (
+    header_text = (
         f"✉️ Сообщение из группы *{escape_markdownv2(chat.title)}*\n"
         f"От: @{escape_markdownv2(user.username)}\n"
-        f"ID: `{chat_id}`\n\n"
+        f"ID: `{chat_id}`"
     )
-    full_message = header + escape_markdownv2(message.text)
-
-    # Разделение сообщения на части, если оно слишком длинное
-    messages_to_send = split_message(full_message)
 
     success = False
     for admin_chat in admin_chats:
         try:
-            for msg in messages_to_send:
-                await context.bot.send_message(
-                    chat_id=admin_chat,
-                    text=msg,
-                    parse_mode='MarkdownV2'
-                )
+            # Отправляем заголовок (с информацией)
+            await context.bot.send_message(
+                chat_id=admin_chat,
+                text=header_text,
+                parse_mode='MarkdownV2'
+            )
+            # Пересылаем (копируем) оригинальное сообщение с сохранением форматирования
+            await context.bot.copy_message(
+                chat_id=admin_chat,
+                from_chat_id=chat_id,
+                message_id=message.message_id
+            )
             success = True
         except BadRequest as e:
-            logger.error(f"BadRequest error while sending to {admin_chat}: {e}")
+            logger.error(f"BadRequest error while copying message to {admin_chat}: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error while sending to {admin_chat}: {e}")
+            logger.error(f"Unexpected error while copying message to {admin_chat}: {e}")
     
     if success:
         await update.message.reply_text("✉️ Сообщение успешно доставлено администратору(ам).")
     else:
         await update.message.reply_text("⚠️ Не удалось доставить сообщение администраторам.")
+
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -287,40 +288,41 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❓ Выберите группу для отправки сообщения:", reply_markup=reply_markup)
         return
 
-    # Если админ отвечает на сообщение, отправленное ботом, доставляем ответ в нужную группу
+    # Если админ отвечает на сообщение, пересылаем оригинал с сохранением форматирования
     if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
         original_text = message.reply_to_message.text
         if "✉️ Сообщение из группы" in original_text:
             try:
+                # Извлекаем ID группы из заголовка (предполагается, что он записан во 2-й строке)
                 parts = original_text.split('\n')
-                group_id = parts[2].split(': ')[-1].strip('`')  # Извлекаем ID группы
+                group_id = parts[2].split(': ')[-1].strip('`')
                 admin = message.from_user
-                header = (
+                header_text = (
                     f"✉️ Ответ из группы *{escape_markdownv2(update.effective_chat.title)}*\n"
-                    f"От: @{escape_markdownv2(admin.username)}\n\n"
+                    f"От: @{escape_markdownv2(admin.username)}"
                 )
-                full_message = header + escape_markdownv2(message.text)
-
-                # Разделение сообщения на части, если оно слишком длинное
-                messages_to_send = split_message(full_message)
-
-                for msg in messages_to_send:
-                    await context.bot.send_message(
-                        chat_id=group_id,
-                        text=msg,
-                        parse_mode='MarkdownV2'
-                    )
+                # Отправляем заголовок в целевую группу
+                await context.bot.send_message(
+                    chat_id=group_id,
+                    text=header_text,
+                    parse_mode='MarkdownV2'
+                )
+                # Пересылаем (копируем) оригинальное сообщение с сохранением форматирования
+                # В данном случае пересылается ответное сообщение админа
+                await context.bot.copy_message(
+                    chat_id=group_id,
+                    from_chat_id=chat_id,
+                    message_id=message.message_id
+                )
                 await update.message.reply_text(f"✉️ Сообщение доставлено в группу {group_id}.")
             except Exception as e:
                 logger.error(f"⚠️ Ошибка отправки сообщения в чат: {e}")
-
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    # Получаем данные кнопки и ID админской группы (отправителя)
     action = query.data
     admin_chat_id = str(query.message.chat.id)
 
@@ -340,52 +342,49 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     admin = original_message.from_user
     admin_chat = await context.bot.get_chat(admin_chat_id)
-    header = f"✉️ Сообщение из админской группы *{escape_markdownv2(admin_chat.title)}*\nОт: @{escape_markdownv2(admin.username)}\n\n"
-    message_text = header + escape_markdownv2(original_message.text)
-
-    # Разделение сообщения на части, если оно слишком длинное
-    messages_to_send = split_message(message_text)
-
-    # Отправка сообщения во все пользовательские группы
+    header_text = f"✉️ Сообщение из админской группы *{escape_markdownv2(admin_chat.title)}*\nОт: @{escape_markdownv2(admin.username)}"
+    
     if action == "send_to_all":
         for user_chat in user_chats:
             try:
-                for msg in messages_to_send:
-                    await context.bot.send_message(
-                        chat_id=user_chat,
-                        text=msg,
-                        parse_mode='MarkdownV2'
-                    )
+                # Отправляем заголовок в целевую группу
+                await context.bot.send_message(
+                    chat_id=user_chat,
+                    text=header_text,
+                    parse_mode='MarkdownV2'
+                )
+                # Пересылаем оригинальное сообщение с сохранением форматирования
+                await context.bot.copy_message(
+                    chat_id=user_chat,
+                    from_chat_id=original_message.chat.id,
+                    message_id=original_message.message_id
+                )
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {user_chat}.")
-            except BadRequest as e:
-                logger.error(f"BadRequest error while sending to {user_chat}: {e}")
-                await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Ошибка при отправке сообщения в группу {user_chat}.")
             except Exception as e:
-                logger.error(f"Unexpected error while sending to {user_chat}: {e}")
-                await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Непредвиденная ошибка при отправке в группу {user_chat}.")
+                logger.error(f"Ошибка при пересылке сообщения в группу {user_chat}: {e}")
+                await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Ошибка при отправке сообщения в группу {user_chat}.")
         await query.edit_message_text("✉️ Сообщение отправлено во все пользовательские группы.")
 
-    # Отправка сообщения в конкретную группу
     elif action.startswith("send_to_group_"):
         group_id = action.split("_")[-1]
         if group_id in user_chats:
             try:
-                for msg in messages_to_send:
-                    await context.bot.send_message(
-                        chat_id=group_id,
-                        text=msg,
-                        parse_mode='MarkdownV2'
-                    )
+                await context.bot.send_message(
+                    chat_id=group_id,
+                    text=header_text,
+                    parse_mode='MarkdownV2'
+                )
+                await context.bot.copy_message(
+                    chat_id=group_id,
+                    from_chat_id=original_message.chat.id,
+                    message_id=original_message.message_id
+                )
                 await query.edit_message_text(f"✉️ Сообщение отправлено в группу {group_id}.")
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {group_id}.")
-            except BadRequest as e:
-                logger.error(f"BadRequest error while sending to {group_id}: {e}")
+            except Exception as e:
+                logger.error(f"Ошибка при пересылке сообщения в группу {group_id}: {e}")
                 await query.edit_message_text(f"⚠️ Ошибка при отправке сообщения в группу {group_id}.")
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Ошибка при отправке сообщения в группу {group_id}.")
-            except Exception as e:
-                logger.error(f"Unexpected error while sending to {group_id}: {e}")
-                await query.edit_message_text(f"⚠️ Непредвиденная ошибка при отправке в группу {group_id}.")
-                await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Непредвиденная ошибка при отправке в группу {group_id}.")
         else:
             await query.edit_message_text(f"⚠️ Группа {group_id} не найдена в списке пользовательских групп.")
 
