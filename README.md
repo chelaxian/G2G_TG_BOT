@@ -178,6 +178,9 @@ and allow exchange messages between all connected groups
      - `/setdescription` — для добавления описания бота.
      - `/setabouttext` — для добавления текста о боте.
      - `/setuserpic` — для установки фотографии профиля.
+     - `/setjoingroups` — для разрешения добавления бота в группы выставите значение `enable`.
+     - `/setprivacy` — для разрешения боту чтения всех сообщений в группе выставите значение `disable`.
+     - `Bot Settings` -> `Group Admin Rights` - Выдайте все административные права, кроме `Promote Anonymous admins`.
      - `/setcommands` — для задания списка доступных команд для бота. Скопируйте и вставьте в чат следующие команды:
 ```
 start - вызов бота
