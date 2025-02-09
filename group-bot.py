@@ -79,7 +79,7 @@ async def toggle_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: 
     is_admin_chat = chat_id in admin_chats
 
     if not (is_user_chat or is_admin_chat):
-        await update.message.reply_text("⚠️ Эта команда доступна только в разрешенных группах.")
+        #await update.message.reply_text("⚠️ Эта команда доступна только в разрешенных группах.")
         return
 
     # Определяем тип группы
