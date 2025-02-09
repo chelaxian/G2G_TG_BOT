@@ -178,7 +178,18 @@ and allow exchange messages between all connected groups
      - `/setdescription` — для добавления описания бота.
      - `/setabouttext` — для добавления текста о боте.
      - `/setuserpic` — для установки фотографии профиля.
-     - `/setcommands` — для задания списка доступных команд для бота.
+     - `/setcommands` — для задания списка доступных команд для бота. Скопируйте и вставьте в чат следующие команды:
+```
+start - вызов бота
+on - бот слушает сообщения
+off - бот игнорирует сообщения
+all - отправить всем
+get_groups_id - получить ID групп
+add_user_group - + ID - добавить ID в список users
+del_user_group - + ID - удалить ID из списка users
+add_admin_group - + ID - добавить ID в список admins
+del_admin_group - + ID - удалить ID из списка admins
+```
 
 Теперь у вас есть токен, который необходимо вставить в файл `bot_token.txt` вашего проекта для подключения бота к Telegram API.
 
