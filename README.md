@@ -24,7 +24,6 @@ and allow exchange messages between all connected groups
 - `/del_admin_group` + "ID_группы" - удалить ID из списка admins.txt 
 
 Для получения ID группы рекомендую использовать другого бота `@getmy_idbot` (https://t.me/getmy_idbot) и кнопку `Chat` (или аналогичные) \
-<img width="329" alt="image" src="https://github.com/user-attachments/assets/f08477e9-b0dd-4a00-bc2c-43e24f1001ee" /> \
 Также можно использовать кастомные Telegram-клиенты, которые показывают ID группы, например [iMe](https://www.imem.app/) или [Swiftgram](https://apps.apple.com/us/app/swiftgram/id6471879502)
 
 ---
@@ -178,7 +177,21 @@ and allow exchange messages between all connected groups
      - `/setdescription` — для добавления описания бота.
      - `/setabouttext` — для добавления текста о боте.
      - `/setuserpic` — для установки фотографии профиля.
-     - `/setcommands` — для задания списка доступных команд для бота.
+     - `/setjoingroups` — для разрешения добавления бота в группы выставите значение `enable`.
+     - `/setprivacy` — для разрешения боту чтения всех сообщений в группе выставите значение `disable`.
+     - `Bot Settings` -> `Group Admin Rights` - Выдайте все административные права, кроме `Promote Anonymous admins`.
+     - `/setcommands` — для задания списка доступных команд для бота. Скопируйте и вставьте в чат следующие команды:
+```
+start - вызов бота
+on - бот слушает сообщения
+off - бот игнорирует сообщения
+all - отправить всем
+get_groups_id - получить ID групп
+add_user_group - + ID - добавить ID в список users
+del_user_group - + ID - удалить ID из списка users
+add_admin_group - + ID - добавить ID в список admins
+del_admin_group - + ID - удалить ID из списка admins
+```
 
 Теперь у вас есть токен, который необходимо вставить в файл `bot_token.txt` вашего проекта для подключения бота к Telegram API.
 
@@ -262,6 +275,12 @@ python group-bot.py
    sudo journalctl -u telegrambot.service -f
    ```
 
+Теперь ваш бот развернут и запущен в облаке.
+
 ---
 
-Теперь ваш бот развернут и запущен в облаке.
+### Шаг 8. Добавление бота в чат-группы.
+
+Добавьте вашего бота во все админские и пользовательские чат-группы в Telegram и сделайте бота администратором каждой такой группы. Выдайте боту все административные права, кроме прав на Анонимность.
+
+Группа может быть частной и даже с запретом на пересылку сообщений. Бот будет работать в любом случае, так как он не пересылает сообщения а копирует и дублирует в другую чат-группу.
