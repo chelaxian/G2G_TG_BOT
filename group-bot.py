@@ -89,12 +89,18 @@ async def toggle_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: 
     await update.message.reply_text(f"{group_type} режим прослушивания сообщений {status}")
 
 async def on_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.chat.type == 'private':
+        return
     await toggle_mode(update, context, True)
 
 async def off_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.chat.type == 'private':
+        return
     await toggle_mode(update, context, False)
 
 async def all_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.chat.type == 'private':
+        return
     if not await check_admin(update, context):
         await update.message.reply_text("⚠️ Эта команда доступна только в группах администраторов.")
         return
@@ -135,8 +141,9 @@ async def all_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"⚠️ Непредвиденная ошибка при отправке в группу {user_chat}.")
 
 
-
 async def get_groups_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.chat.type == 'private':
+        return
     if not await check_admin(update, context):
         await update.message.reply_text("⚠️ Эта команда доступна только в группах администраторов.")
         return
@@ -163,6 +170,8 @@ async def get_groups_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_group_management(update: Update, context: ContextTypes.DEFAULT_TYPE, file: str, add: bool):
+    if update.message.chat.type == 'private':
+        return
     if not await check_admin(update, context):
         await update.message.reply_text("⚠️ Эта команда доступна только в группах администраторов.")
         return
