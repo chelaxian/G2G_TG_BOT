@@ -295,7 +295,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Проверяем, является ли сообщение реплаем
     if message.reply_to_message:
-        # Если это реплай на сообщение бота и содержит заголовок
+        # Проверяем, является ли реплай сообщением от бота и содержит ли оно заголовок
         if message.reply_to_message.from_user.id == context.bot.id:
             original_text = message.reply_to_message.text
             if "✉️ Сообщение из группы" in original_text:
@@ -331,11 +331,16 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     "⚠️ Пожалуйста, ответьте на сообщение с заголовком: ✉️ Сообщение из группы."
                 )
         else:
-            # Реплай на НЕ-ботовое сообщение – предлагаем выбрать группу
+            # Реплай на НЕ-ботовое сообщение – новая логика (двойная пересылка)
             user_chats = load_groups(USERS_FILE)
-            if not user_chats:
-                await update.message.reply_text("⚠️ Список пользовательских групп пуст.")
-                return
+            admin = message.from_user
+            header_text = (
+                f"✉️ Ответ из группы *{escape_markdownv2(update.effective_chat.title)}*\n"
+                f"От: @{escape_markdownv2(admin.username)}"
+            )
+
+            # Сохраняем информацию о reply_to_message в context.chat_data
+            context.chat_data["reply_to_message"] = message.reply_to_message
 
             keyboard = []
             keyboard.append([InlineKeyboardButton("*️⃣ Отправить всем", callback_data="send_to_all")])
@@ -389,20 +394,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ Список пользовательских групп пуст.")
         return
 
+    # Получаем исходное сообщение
     original_message = query.message.reply_to_message
     if not original_message:
         await query.edit_message_text("⚠️ Не удалось найти исходное сообщение.")
         return
 
+    # Получаем reply_to_message из context.chat_data
+    reply_to_message = context.chat_data.get("reply_to_message")
+
     admin = original_message.from_user
     admin_chat = await context.bot.get_chat(admin_chat_id)
     header_text = f"✉️ Сообщение из админской группы *{escape_markdownv2(admin_chat.title)}*\nОт: @{escape_markdownv2(admin.username)}"
 
+    # Логируем данные для отладки
+    logger.info(f"Action: {action}, Admin Chat ID: {admin_chat_id}, Original Message: {original_message.text}")
+
     # Определяем, нужно ли выполнять двойную пересылку:
-    # если исходное сообщение, на которое дан реплай, само является реплаем и не от бота.
     dual_forward = False
-    if original_message.reply_to_message and original_message.reply_to_message.from_user.id != context.bot.id:
+    if reply_to_message and reply_to_message.from_user.id != context.bot.id:
         dual_forward = True
+        logger.info("Dual forward is required.")
+    else:
+        logger.info("Single forward will be used.")
 
     if action == "send_to_all":
         for user_chat in user_chats:
@@ -418,15 +432,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # Пересылаем оригинальное сообщение (на которое дали реплай)
                     await context.bot.copy_message(
                         chat_id=user_chat,
-                        from_chat_id=original_message.reply_to_message.chat.id,
-                        message_id=original_message.reply_to_message.message_id
+                        from_chat_id=reply_to_message.chat.id,
+                        message_id=reply_to_message.message_id
                     )
+                    logger.info(f"Copied original message to {user_chat}.")
                     # Пересылаем само новое сообщение
                     await context.bot.copy_message(
                         chat_id=user_chat,
                         from_chat_id=original_message.chat.id,
                         message_id=original_message.message_id
                     )
+                    logger.info(f"Copied new message to {user_chat}.")
                 else:
                     # Пересылаем только само сообщение
                     await context.bot.copy_message(
@@ -434,6 +450,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         from_chat_id=original_message.chat.id,
                         message_id=original_message.message_id
                     )
+                    logger.info(f"Copied single message to {user_chat}.")
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {user_chat}.")
             except Exception as e:
                 logger.error(f"Ошибка при пересылке сообщения в группу {user_chat}: {e}")
@@ -454,15 +471,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # Пересылаем оригинальное сообщение (на которое дали реплай)
                     await context.bot.copy_message(
                         chat_id=group_id,
-                        from_chat_id=original_message.reply_to_message.chat.id,
-                        message_id=original_message.reply_to_message.message_id
+                        from_chat_id=reply_to_message.chat.id,
+                        message_id=reply_to_message.message_id
                     )
+                    logger.info(f"Copied original message to {group_id}.")
                     # Пересылаем само новое сообщение
                     await context.bot.copy_message(
                         chat_id=group_id,
                         from_chat_id=original_message.chat.id,
                         message_id=original_message.message_id
                     )
+                    logger.info(f"Copied new message to {group_id}.")
                 else:
                     # Пересылаем только само сообщение
                     await context.bot.copy_message(
@@ -470,6 +489,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         from_chat_id=original_message.chat.id,
                         message_id=original_message.message_id
                     )
+                    logger.info(f"Copied single message to {group_id}.")
                 await query.edit_message_text(f"✉️ Сообщение отправлено в группу {group_id}.")
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"✉️ Сообщение доставлено в группу {group_id}.")
             except Exception as e:
