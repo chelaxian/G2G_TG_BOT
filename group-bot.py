@@ -455,6 +455,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"Ошибка при пересылке сообщения в группу {user_chat}: {e}")
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Ошибка при отправке сообщения в группу {user_chat}.")
+        # Очищаем reply_to_message после успешной отправки
+        context.chat_data.pop("reply_to_message", None)
         await query.edit_message_text("✉️ Сообщение отправлено во все пользовательские группы.")
     elif action.startswith("send_to_group_"):
         group_id = action.split("_")[-1]
@@ -496,6 +498,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Ошибка при пересылке сообщения в группу {group_id}: {e}")
                 await query.edit_message_text(f"⚠️ Ошибка при отправке сообщения в группу {group_id}.")
                 await context.bot.send_message(chat_id=admin_chat_id, text=f"⚠️ Ошибка при отправке сообщения в группу {group_id}.")
+            # Очищаем reply_to_message после успешной отправки
+            context.chat_data.pop("reply_to_message", None)
         else:
             await query.edit_message_text(f"⚠️ Группа {group_id} не найдена в списке пользовательских групп.")
 
